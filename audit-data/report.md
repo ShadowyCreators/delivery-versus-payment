@@ -96,20 +96,16 @@ There are no admin roles or privileged accounts in the DVP protocol. The system 
 | Low               | 4                      |
 | Info              | 1                      |
 | Gas Optimizations | 0                      |
-| Total             | 0                      |
+| Total             | 5                      |
 
 # Findings
 ## High
 
 None
 
----
-
 ## Medium
 
 None
-
----
 
 ## Low 
 
@@ -135,8 +131,6 @@ None
 **Acknowledgement:** 
 - The potential risk is acknowledged at lines 395-396 DeliveryVersusPaymentV1.sol
 
----
-
 ### [L-2] Token upgradeability allows post-creation malicious behavior
 
 **Description:** Upgradeable or governance-controlled tokens can become malicious after settlement creation, since the contract performs no re-validation of token contracts at execution time.
@@ -148,12 +142,9 @@ None
 - Settlement parties may lose funds or have settlements become unexecutable due to post-creation token changes
 
 **Recommended Mitigation:** 
-- Implement token allowlisting for high-value settlements
 - Consider re-validating token contracts at execution time
 - Add monitoring for token upgrade events
 - Document risks clearly for users dealing with upgradeable tokens
-
----
 
 ### [L-3] NFT transfers use ERC20 method instead of safe transfer
 
@@ -167,8 +158,6 @@ None
 **Recommended Mitigation:** 
 - When `isNFT == true`, use `IERC721(flow.token).safeTransferFrom(flow.from, flow.to, flow.amountOrId)` instead of casting to IERC20
 - Import `IERC721` interface and add proper NFT handling logic
-
----
 
 ### [L-4] Unbounded loops enable gas-based denial of service
 
@@ -188,7 +177,6 @@ None
 **Acknowledgement:** 
 - Known issue documented in README.md lines 121-122: "The current chain's block gas limit acts as a cap. In every case it is the caller's responsibility to ensure that the gas requirement can be met."
 
----
 # Informational
 
 ### [I-1] Off-chain stored XSS risk from settlement reference
@@ -204,8 +192,6 @@ None
 - UI implementations must sanitize/escape settlementReference before rendering
 - Consider Content Security Policy (CSP) headers
 - Optionally add on-chain length limits or character set restrictions
-
----
 
 # Gas 
 
