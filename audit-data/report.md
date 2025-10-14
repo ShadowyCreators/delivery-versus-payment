@@ -185,16 +185,17 @@ function _isERC721(address token) internal view returns (bool) {
   } catch {}
   
   // Fallback: Check for core ERC721 functions (for non-ERC165 NFTs)
-  bytes4 ownerOfSelector = bytes4(keccak256("ownerOf(uint256)"));
+  bytes4 isApprovedForAllSelector = bytes4(keccak256("isApprovedForAll(address,address)"));
   bytes4 balanceOfSelector = bytes4(keccak256("balanceOf(address)"));
   
   uint256 validFunctions;
   bool success;
   
-  (success,) = token.staticcall(abi.encodeWithSelector(ownerOfSelector, 1));
-  if (success) validFunctions++;
+  // Use isApprovedForAll instead of ownerOf to avoid reverts on non-existent token IDs
+  (success, bytes memory result) = token.staticcall(abi.encodeWithSelector(isApprovedForAllSelector, address(0), address(0)));
+  if (success && result.length == 32) validFunctions++;
   
-  (success, bytes memory result) = token.staticcall(abi.encodeWithSelector(balanceOfSelector, address(this)));
+  (success, result) = token.staticcall(abi.encodeWithSelector(balanceOfSelector, address(0)));
   if (success && result.length == 32) validFunctions++;
   
   return validFunctions == 2;
