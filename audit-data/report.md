@@ -128,16 +128,19 @@ None
 **Current validation limitations:**
 
 
-1. ERC721 validation (lines 553-555):
+1. ERC721 validation (lines 537-539):
 ```solidity
 function _isERC721(address token) internal view returns (bool) {
-  return token.supportsInterface(type(IERC721).interfaceId);
+  (bool success, bytes memory result) = token.staticcall(
+    abi.encodeWithSelector(IERC165.supportsInterface.selector, type(IERC721).interfaceId)
+  );
+  return success && result.length == 32 && abi.decode(result, (bool));
 }
 ```
 - Exclusion issue: Legitimate NFTs that don't implement ERC165 are rejected
 - False positives: Contracts that are not NFT can implement a ERC721 interface and pass the validation
 
-1. ERC20 validation (lines 560-563):
+1. ERC20 validation (lines 544-547):
 ```solidity
 function _isERC20(address token) internal view returns (bool) {
   (bool success, bytes memory result) = token.staticcall(abi.encodeWithSelector(SELECTOR_ERC20_DECIMALS));
@@ -245,7 +248,7 @@ function _isERC721(address token) internal view returns (bool) {
 This creates different debugging experiences for the same underlying operation.
 
 Current implementation:
-Auto-execution in `approveSettlements()` (lines 231-232):
+Auto-execution in `approveSettlements()` (lines 221-231):
 ```solidity
 try this.executeSettlementInner(msg.sender, settlementId) {
 } catch Error(string memory reason) {
@@ -257,7 +260,7 @@ try this.executeSettlementInner(msg.sender, settlementId) {
 }
 ```
 
-Manual execution in `executeSettlement()` (line 292):
+Manual execution in `executeSettlement()` (line 283):
 ```solidity
 function executeSettlement(uint256 settlementId) external nonReentrant {
     this.executeSettlementInner(msg.sender, settlementId); // No try/catch
@@ -295,7 +298,7 @@ Current implementation: No validation is performed on flow parameters beyond tok
 Recommended validation:
 ```solidity
 // Validate flows
-for (uint256 i = 0; i < lengthFlows; i++) {
+for (uint256 i = 0; i < lengthFlows; ) {
   Flow calldata flow = flows[i];
   
   // Validate addresses for both ERC20 and NFTs
@@ -305,6 +308,10 @@ for (uint256 i = 0; i < lengthFlows; i++) {
   // Validate amount/id based on token type
   // For ERC20/ETH, zero amounts don't make sense; For NFTs, token ID 0 is valid per ERC721 standard
   if (!flow.isNFT && flow.amountOrId == 0) revert InvalidAmountOrId();
+  
+  unchecked {
+    i++;
+  }
 }
 ```
 
@@ -341,7 +348,7 @@ for (uint256 i = 0; i < lengthFlows; i++) {
 
 **Description:** In `isSettlementApproved()` function, `settlement.flows.length` is accessed multiple times but could be cached to save gas.
 
-Current implementation (lines 144-146):
+Current implementation (lines 143-146):
 ```solidity
 if (settlement.flows.length == 0) revert SettlementDoesNotExist();
 
@@ -360,7 +367,7 @@ if (lengthFlows == 0) revert SettlementDoesNotExist();
 
 **Description:** In `isSettlementApproved()` function, the `party` variable declaration can be optimized.
 
-Current implementation (lines 148-149):
+Current implementation (lines 147-149):
 ```solidity
 address party = settlement.flows[i].from;
 if (!settlement.approvals[party]) {
@@ -370,15 +377,27 @@ Alternative optimizations:
 1. Declare outside loop:
 ```solidity
 address party;
-for (uint256 i = 0; i < lengthFlows; i++) {
+for (uint256 i = 0; i < lengthFlows; ) {
   party = settlement.flows[i].from;
   if (!settlement.approvals[party]) {
+    // ... rest of loop body ...
+  }
+  unchecked {
+    i++;
+  }
+}
 ```
 
 2. Use direct access (most gas efficient):
 ```solidity
-for (uint256 i = 0; i < lengthFlows; i++) {
+for (uint256 i = 0; i < lengthFlows; ) {
   if (!settlement.approvals[settlement.flows[i].from]) {
+    // ... rest of loop body ...
+  }
+  unchecked {
+    i++;
+  }
+}
 ```
 
 **Gas savings:** Option 1 saves variable declaration gas in each loop iteration. Option 2 eliminates the temporary variable entirely, providing maximum gas efficiency.
@@ -477,7 +496,7 @@ Recommended enhancement:
 function withdrawETH(uint256[] calldata settlementIds) external nonReentrant {
     uint256 totalAmount = 0;
     
-    for (uint256 i = 0; i < settlementIds.length; i++) {
+    for (uint256 i = 0; i < settlementIds.length; ) {
         uint256 settlementId = settlementIds[i];
         Settlement storage settlement = settlements[settlementId];
         
@@ -490,6 +509,10 @@ function withdrawETH(uint256[] calldata settlementIds) external nonReentrant {
             settlement.ethDeposits[msg.sender] = 0;
             totalAmount += amount;
             emit ETHWithdrawn(msg.sender, amount);
+        }
+        
+        unchecked {
+            i++;
         }
     }
     
@@ -509,7 +532,7 @@ function withdrawETH(uint256[] calldata settlementIds) external nonReentrant {
 
 Current implementation:
 ```solidity
-for (uint256 i = 0; i < lengthSettlements; i++) {
+for (uint256 i = 0; i < lengthSettlements; ) {
     uint256 settlementId = settlementIds[i]; // Declared inside loop
     // ... validation ...
     uint256 ethAmountToRefund = settlement.ethDeposits[msg.sender];
@@ -517,6 +540,9 @@ for (uint256 i = 0; i < lengthSettlements; i++) {
         settlement.ethDeposits[msg.sender] = 0;
         Address.sendValue(payable(msg.sender), ethAmountToRefund); // Multiple sends!
         emit ETHWithdrawn(msg.sender, ethAmountToRefund);
+    }
+    unchecked {
+        i++;
     }
 }
 ```
@@ -526,7 +552,7 @@ Recommended optimization:
 uint256 totalRefund = 0;
 uint256 settlementId; // Declared outside loop
 
-for (uint256 i = 0; i < lengthSettlements; i++) {
+for (uint256 i = 0; i < lengthSettlements; ) {
     settlementId = settlementIds[i];
     Settlement storage settlement = settlements[settlementId];
     
@@ -543,6 +569,10 @@ for (uint256 i = 0; i < lengthSettlements; i++) {
 
     settlement.approvals[msg.sender] = false;
     emit SettlementApprovalRevoked(settlementId, msg.sender);
+    
+    unchecked {
+        i++;
+    }
 }
 
 // Single ETH transfer at the end
@@ -618,8 +648,11 @@ function getSettlementPartyStatus(
 **Current implementation pattern:**
 
 ```solidity
-for (uint256 i = 0; i < lengthFlows; i++) {
+for (uint256 i = 0; i < lengthFlows; ) {
   // loop body
+  unchecked {
+    i++;
+  }
 }
 ```
 
