@@ -85,6 +85,7 @@ The Shadowy Creators team makes all effort to find as many vulnerabilities in th
 # Audit Details 
 
 **The findings described in this document correspond to the following commit hash:**
+
 ```
 e377b72c9e72e408fdb3c3c78de6ecac5a368574
 ```
@@ -126,6 +127,7 @@ None
 
 **Current validation limitations:**
 
+
 1. ERC721 validation (lines 553-555):
 ```solidity
 function _isERC721(address token) internal view returns (bool) {
@@ -145,6 +147,7 @@ function _isERC20(address token) internal view returns (bool) {
 - False positives: Any contract with `decimals()` function passes (oracles, config contracts, etc.)
 
 **Recommended enhancements:**
+
 
 1. Multi-function ERC20 validation:
 ```solidity
@@ -199,9 +202,13 @@ function _isERC721(address token) internal view returns (bool) {
 ```
 
 **Benefits:**
+
+
 - Reduced false positives: Multi-function validation prevents non-token contracts from being accepted
 
 **Trade-offs:**
+
+
 - Higher gas costs: Additional validation calls (~10,000-15,000 gas per token)
 - Increased complexity: More sophisticated validation logic
 - Still not perfect: Cannot guarantee 100% accuracy without calling actual token functions
@@ -211,17 +218,20 @@ function _isERC721(address token) internal view returns (bool) {
 **Description:** Multiple functions contain unbounded loops over flows array and settlement IDs arrays without gas limit considerations. Large settlements or batch operations can exceed block gas limits.
 
 **Risks:** 
+
 - Settlements with too many flows become unexecutable within block gas limits
 - Batch operations on many settlements can fail due to gas exhaustion
 - Griefing: malicious actors can create settlements with excessive flows to waste gas of executors
 - Legitimate large settlements may become permanently unexecutable
 
 **Recommended Mitigation:** 
+
 - Consider adding soft caps on number of flows per settlement
 - Document gas considerations clearly for users
 - Implement pagination for batch operations where feasible
 
 **Acknowledgement:** 
+
 - Known issue documented in README.md lines 121-122: "The current chain's block gas limit acts as a cap. In every case it is the caller's responsibility to ensure that the gas requirement can be met."
 
 
@@ -255,6 +265,7 @@ function executeSettlement(uint256 settlementId) external nonReentrant {
 ```
 
 **Recommended improvement:**
+
 Add consistent error handling to `executeSettlement()`:
 ```solidity
 function executeSettlement(uint256 settlementId) external nonReentrant {
@@ -309,6 +320,7 @@ for (uint256 i = 0; i < lengthFlows; i++) {
 **Description:** Malicious actors can front-run settlement execution by revoking approvals or modifying settlement state just before execution, causing the executor to waste gas on failed transactions.
 
 **Attack scenario:**
+
 1. A settlement is fully approved and ready for execution
 2. User A calls `executeSettlement(settlementId)` 
 3. Malicious User B observes the transaction in the mempool
@@ -317,6 +329,8 @@ for (uint256 i = 0; i < lengthFlows; i++) {
 6. User A wastes gas on the failed execution attempt
 
 **Recommended mitigation:**
+
+
 - Private mempools: Use private transaction pools (e.g., Flashbots Protect) for `executeSettlement()` calls to avoid mempool visibility
 
 **Note:** This is an inherent limitation of public blockchain execution rather than a contract vulnerability. The attacker also pays gas costs, making this primarily a griefing attack rather than a profitable exploit.
@@ -400,6 +414,7 @@ struct Settlement {
 ```
 
 **Gas savings:** 
+
 - Reduces storage usage by packing fields into fewer storage slots
 - `uint128` provides sufficient range for timestamps (valid until year ~10^31)
 - **Settlement creation**: Saves gas by reducing storage operations
@@ -423,6 +438,7 @@ settlement.ethDeposits[msg.sender] = ethAmountRequired;
 ```
 
 Safety analysis:
+
 - The function prevents double approvals with `if (settlement.approvals[msg.sender]) revert ApprovalAlreadyGranted();`
 - Since users cannot approve the same settlement twice, `ethDeposits[msg.sender]` is always 0 before the first (and only) approval
 - Therefore `= ethAmountRequired` and `+= ethAmountRequired` produce identical results
@@ -536,11 +552,13 @@ if (totalRefund > 0) {
 ```
 
 **Gas savings:**
+
 - **Batch ETH transfers**: ~21,000 gas × (n-1) where n = number of settlements with ETH deposits
 - **Variable declaration**: ~50-100 gas × number of settlements processed
 - **Example**: For 5 settlements with ETH deposits, saves ~84,000+ gas from batching transfers alone
 
 **Additional benefits:**
+
 - **Reduced reentrancy surface**: Single external call instead of multiple
 - **Consistency**: Matches the batch pattern used in `approveSettlements()`
 - **Better UX**: Single transfer event instead of multiple small transfers
@@ -598,6 +616,7 @@ function getSettlementPartyStatus(
 **Description:** All for loops in the contract use standard `i++` increment which includes overflow checks. Since loop counters are bounded by array lengths and cannot realistically overflow, using `unchecked` increment saves significant gas.
 
 **Current implementation pattern:**
+
 ```solidity
 for (uint256 i = 0; i < lengthFlows; i++) {
   // loop body
@@ -605,6 +624,7 @@ for (uint256 i = 0; i < lengthFlows; i++) {
 ```
 
 **Recommended optimization:**
+
 ```solidity
 for (uint256 i = 0; i < lengthFlows; ) {
   // loop body
@@ -615,6 +635,7 @@ for (uint256 i = 0; i < lengthFlows; ) {
 ```
 
 **Affected functions:**
+
 - `createSettlement()` - flows validation loop
 - `executeSettlementInner()` - flows execution loop  
 - `isSettlementApproved()` - flows approval check loop
@@ -624,11 +645,13 @@ for (uint256 i = 0; i < lengthFlows; ) {
 - `_getTokenStatuses()` - flows loop
 
 **Gas savings:**
+
 - Eliminates overflow checks on loop increment operations
 - Saves gas on every loop iteration across all functions
 - Particularly beneficial for settlements with many flows or batch operations
 
 **Safety analysis:**
+
 - Loop counters are bounded by array lengths which cannot exceed reasonable limits
 - No risk of overflow in practical usage scenarios
 - Standard optimization pattern used throughout DeFi protocols
@@ -638,6 +661,7 @@ for (uint256 i = 0; i < lengthFlows; ) {
 ## Alternative Architecture: Meta-Signature Based Execution
 
 **Current Architecture:**
+
 The current DVP implementation follows a multi-transaction pattern:
 - Settlement creation and storage on-chain
 - Individual approval transactions from each party
@@ -645,19 +669,23 @@ The current DVP implementation follows a multi-transaction pattern:
 - All data and state maintained on-chain throughout the process
 
 **Alternative Approach:**
+
 An alternative architecture could leverage off-chain coordination with on-chain execution verification. Instead of storing approvals and settlement data on-chain, parties could coordinate off-chain and execute settlements atomically in a single transaction using cryptographic proofs of consent.
 
 **Potential Benefits:**
-- **Significant gas reduction**: Elimination of intermediate storage and multiple transactions
-- **Enhanced user experience**: Streamlined single-transaction execution
-- **Improved scalability**: More efficient handling of complex multi-party settlements
-- **Maintained security**: Cryptographic verification ensures same trust guarantees
+
+- Significant gas reduction: Elimination of intermediate storage and multiple transactions
+- Enhanced user experience: Streamlined single-transaction execution
+- Improved scalability: More efficient handling of complex multi-party settlements
+- Maintained security: Cryptographic verification ensures same trust guarantees
 
 **Considerations:**
-- **Technical complexity**: Requires sophisticated off-chain coordination mechanisms
-- **Infrastructure requirements**: Need for reliable signature aggregation and coordination systems
+
+- Technical complexity: Requires sophisticated off-chain coordination mechanisms
+- Infrastructure requirements: Need for reliable signature aggregation and coordination systems
 
 **Strategic Value:**
+
 This architectural approach represents a potential evolution path for the DVP protocol, offering substantial efficiency improvements while preserving the core atomic settlement guarantees. The implementation would require careful design of cryptographic verification mechanisms and off-chain coordination protocols.
 
 Such architectural enhancements could position the protocol as a leading solution for efficient multi-party asset exchanges in the DeFi ecosystem.
