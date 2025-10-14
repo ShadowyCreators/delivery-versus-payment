@@ -131,10 +131,7 @@ None
 1. ERC721 validation (lines 537-539):
 ```solidity
 function _isERC721(address token) internal view returns (bool) {
-  (bool success, bytes memory result) = token.staticcall(
-    abi.encodeWithSelector(IERC165.supportsInterface.selector, type(IERC721).interfaceId)
-  );
-  return success && result.length == 32 && abi.decode(result, (bool));
+  return token.supportsInterface(type(IERC721).interfaceId);
 }
 ```
 - Exclusion issue: Legitimate NFTs that don't implement ERC165 are rejected
@@ -143,7 +140,7 @@ function _isERC721(address token) internal view returns (bool) {
 1. ERC20 validation (lines 544-547):
 ```solidity
 function _isERC20(address token) internal view returns (bool) {
-  (bool success, bytes memory result) = token.staticcall(abi.encodeWithSelector(SELECTOR_ERC20_DECIMALS));
+  (bool success, bytes memory result) = token.staticcall(abi.encodeWithSelecto(SELECTOR_ERC20_DECIMALS));
   return success && result.length == 32;
 }
 ```
